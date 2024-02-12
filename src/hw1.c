@@ -26,7 +26,7 @@ void print_packet_sf(unsigned char packet[])
     
     unsigned int fragment_offset = 0;
     fragment_offset |= packet[8] << 6;
-    fragment_offset |= packet[9] >> 5;
+    fragment_offset |= (packet[9] & 0xFC) >> 6;
     printf("Fragment Offset: %d\n", fragment_offset);
     
     unsigned int packet_length = 0;
