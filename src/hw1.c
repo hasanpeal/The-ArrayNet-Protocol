@@ -68,9 +68,8 @@ void print_packet_sf(unsigned char packet[])
 
 unsigned int compute_checksum_sf(unsigned char packet[])
 {
-    unsigned int finalRes = 0;
-    unsigned long payloadSum = 0;
-    
+    unsigned long finalRes = 0;
+
     unsigned int src_addr = 0;
     src_addr |= packet[0] << 20;
     src_addr |= packet[1] << 12;
@@ -119,10 +118,10 @@ unsigned int compute_checksum_sf(unsigned char packet[])
     
     for(int i = 16; i < packet_length; i += 4) {
         int payload = (packet[i] << 24) | (packet[i + 1] << 16) | (packet[i + 2] << 8) | packet[i + 3];
-        if(i > 16) payloadSum += abs(payload);
+        finalRes += labs(payload);
     }
     
-    unsigned int result = finalRes%8388607;
+    unsigned int result = (unsigned int)(finalRes%8388607);
     return result;
 }
 
