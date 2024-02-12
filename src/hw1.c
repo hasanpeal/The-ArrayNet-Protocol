@@ -37,8 +37,7 @@ void print_packet_sf(unsigned char packet[])
     
     unsigned int max_hop_count = 0;
     max_hop_count |= (packet[11] & 0x0F) << 1;
-    max_hop_count |= (packet[12] & 0x80) >> 1;
-    max_hop_count = max_hop_count >> 2;
+    max_hop_count |= (packet[12] & 0x80) >> 7;
     printf("Maximum Hop Count: %d\n", max_hop_count);
     
     unsigned int checksum = 0;
