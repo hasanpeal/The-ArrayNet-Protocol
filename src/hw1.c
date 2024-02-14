@@ -167,52 +167,66 @@ unsigned int packetize_array_sf(int *array, unsigned int array_len, unsigned cha
                           unsigned int src_port, unsigned int dest_port, unsigned int maximum_hop_count,
                           unsigned int compression_scheme, unsigned int traffic_class)
 {
-    unsigned int finalRes = 0, fragment_offset = 0, totalPayload, totalPackets;
-    for(int i = 0; i < array_len; i = i + (max_payload/sizeof(int))) 
-    {
-        if(((max_payload/sizeof(int)) + i) > array_len) totalPayload = array_len - i;
-        else totalPayload = (max_payload/sizeof(int));
-        unsigned int currPayloadTotal = totalPayload*sizeof(int);
-        totalPackets = (totalPayload*sizeof(int)) + 16;
-        if(finalRes >= packets_len) break;
-        packets[finalRes] = (unsigned char *)malloc(totalPackets);
-        if(packets[finalRes] == NULL) break;
-        packets[finalRes][0] = (src_addr >> 20) & 0xFF;
-        packets[finalRes][1] = (src_addr >> 12) & 0xFF;
-        packets[finalRes][2] = (src_addr >> 4) & 0xFF;
-        packets[finalRes][3] = ((src_addr & 0xF) << 4) | ((dest_addr >> 24) & 0xF);
-        packets[finalRes][4] = (dest_addr >> 20) & 0xFF;
-        packets[finalRes][5] = (dest_addr >> 12) & 0xFF;
-        packets[finalRes][6] = (dest_addr >> 4) & 0xFF;
-        packets[finalRes][7] = ((dest_addr & 0x0F) << 4) | (src_port & 0x0F);
-        packets[finalRes][8] = (fragment_offset >> 8) & 0xFF;
-        packets[finalRes][9] = (fragment_offset & 0xFF);
-        packets[finalRes][10] = (totalPackets >> 8) & 0xFF;
-        packets[finalRes][11] = totalPackets & 0xFF;
-        packets[finalRes][12] = ((maximum_hop_count & 0x1F) << 3);
-        packets[finalRes][13] = ((compression_scheme & 0x03) << 6) | ((traffic_class >> 2) & 0x3F);
-        packets[finalRes][14] = ((traffic_class & 0x03) << 6);
+    unsigned int num_ints_per_packet = max_payload / sizeof(int);
+    unsigned int total_packets_needed = array_len / num_ints_per_packet + (array_len % num_ints_per_packet != 0);
+    unsigned int packets_created = 0;
 
-        packets[finalRes][12] &= 0x80; 
-        packets[finalRes][13] = 0;
-        packets[finalRes][14] = 0;
-
-        for(int k = 0; k < totalPayload; ++k)
-        {
-            int currPayload = array[k+i];
-            packets[finalRes][16 + (k * 4)] = (currPayload >> 24) & 0xFF;
-            packets[finalRes][16 + (k * 4) + 1] = (currPayload >> 16) & 0xFF;
-            packets[finalRes][16 + (k * 4) + 2] = (currPayload >> 8) & 0xFF;
-            packets[finalRes][16 + (k * 4) + 3] = currPayload & 0xFF;
+    for (unsigned int i = 0; i < total_packets_needed && packets_created < packets_len; ++i) {
+        unsigned int start_index = i * num_ints_per_packet;
+        unsigned int end_index = start_index + num_ints_per_packet;
+        if (end_index > array_len) {
+            end_index = array_len;
         }
-        unsigned int checksum = compute_checksum_sf(packets[finalRes]);
-        packets[finalRes][12] |= (checksum >> 16) & 0x7F; 
-        packets[finalRes][13] = (checksum >> 8) & 0xFF;
-        packets[finalRes][14] = checksum & 0xFF;
-        fragment_offset += currPayloadTotal;
-        finalRes++;
+        unsigned int num_ints_in_this_packet = end_index - start_index;
+        unsigned int payload_size = num_ints_in_this_packet * sizeof(int);
+        unsigned int packet_size = 16 + payload_size; // 16 bytes for header + payload size
+
+        packets[packets_created] = malloc(packet_size);
+        if (packets[packets_created] == NULL) {
+            // Handle memory allocation failure
+            break;
+        }
+
+        // Set up the packet header
+        packets[packets_created][0] = (src_addr >> 20) & 0xFF;
+        packets[packets_created][1] = (src_addr >> 12) & 0xFF;
+        packets[packets_created][2] = (src_addr >> 4) & 0xFF;
+        packets[packets_created][3] = ((src_addr & 0xF) << 4) | ((dest_addr >> 24) & 0xF);
+        packets[packets_created][4] = (dest_addr >> 16) & 0xFF;
+        packets[packets_created][5] = (dest_addr >> 8) & 0xFF;
+        packets[packets_created][6] = dest_addr & 0xFF;
+            packets[packets_created][7] = (src_port << 4) | (dest_port & 0xF);
+
+    unsigned int fragment_offset = start_index * sizeof(int);
+    packets[packets_created][8] = (fragment_offset >> 6) & 0xFF;
+    packets[packets_created][9] = ((fragment_offset & 0x3F) << 2) | ((packet_size >> 12) & 0x3);
+
+    packets[packets_created][10] = (packet_size >> 4) & 0xFF;
+    packets[packets_created][11] = ((packet_size & 0xF) << 4) | ((maximum_hop_count >> 1) & 0xF);
+
+    packets[packets_created][12] = ((maximum_hop_count & 0x1) << 7) | ((compression_scheme & 0x3) << 6) | ((traffic_class >> 4) & 0x3F);
+    packets[packets_created][13] = (traffic_class << 4) & 0xF0; // The first 4 bits of the 14th byte are reserved for the lower bits of traffic class, which will be adjusted after checksum calculation.
+
+    // Fill in the payload
+    for (unsigned int j = start_index, k = 16; j < end_index; ++j, k += 4) {
+        packets[packets_created][k] = (array[j] >> 24) & 0xFF;
+        packets[packets_created][k + 1] = (array[j] >> 16) & 0xFF;
+        packets[packets_created][k + 2] = (array[j] >> 8) & 0xFF;
+        packets[packets_created][k + 3] = array[j] & 0xFF;
     }
-    return finalRes;
+
+    // Compute and set checksum
+    unsigned int checksum = compute_checksum_sf(packets[packets_created]);
+    packets[packets_created][12] = ((maximum_hop_count & 0x1) << 7) | ((compression_scheme & 0x3) << 6) | ((traffic_class & 0x3F) >> 2) | ((checksum >> 16) & 0x7F);
+    packets[packets_created][13] = (traffic_class << 4) | ((checksum >> 8) & 0xFF);
+    packets[packets_created][14] = checksum & 0xFF;
+
+    // Increment the packets_created counter
+    packets_created++;
+    }
+
+    return packets_created;
+}
     // (void)array;
     // (void)array_len;
     // (void)packets;
@@ -226,5 +240,5 @@ unsigned int packetize_array_sf(int *array, unsigned int array_len, unsigned cha
     // (void)compression_scheme;
     // (void)traffic_class;
     // return -1;
-}
+
 
