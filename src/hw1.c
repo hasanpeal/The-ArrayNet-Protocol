@@ -168,77 +168,59 @@ unsigned int packetize_array_sf(int *array, unsigned int array_len,
                                 unsigned int dest_addr, unsigned int src_port, 
                                 unsigned int dest_port, unsigned int maximum_hop_count,
                                 unsigned int compression_scheme, unsigned int traffic_class) {
-    // Define the header size based on the provided structure
     const unsigned int HEADER_SIZE = 16;
     unsigned int num_packets_created = 0;
     unsigned int fragment_offset = 0;
     unsigned int array_index = 0;
 
-    // Calculate the number of packets needed
-    unsigned int total_packets_needed = (array_len * sizeof(int) + max_payload - 1) / max_payload;
-    if (packets_len < total_packets_needed) {
-        total_packets_needed = packets_len;
-    }
-
-    // Packetize the array
-    for (unsigned int i = 0; i < total_packets_needed; i++) {
-        // Calculate the payload length for the current packet
-        unsigned int payload_length = (array_index + max_payload/sizeof(int) <= array_len) ? 
-                                      max_payload : (array_len - array_index) * sizeof(int);
-
-        // Calculate the total packet length
+    while (array_index < array_len && num_packets_created < packets_len) {
+        unsigned int payload_length = ((array_len - array_index) * sizeof(int) > max_payload) ? 
+                                       max_payload : (array_len - array_index) * sizeof(int);
         unsigned int packet_length = HEADER_SIZE + payload_length;
 
-        // Allocate memory for the new packet
-        packets[i] = (unsigned char *)malloc(packet_length);
-        if (packets[i] == NULL) {
-            // Memory allocation failed, break out of the loop
+        packets[num_packets_created] = (unsigned char *)malloc(packet_length);
+        if (packets[num_packets_created] == NULL) {
             break;
         }
 
-        // Clear the memory
-        memset(packets[i], 0, packet_length);
-
-        // Fill in the header fields
-        packets[i][0] = (src_addr >> 20) & 0xFF;
-        packets[i][1] = (src_addr >> 12) & 0xFF;
-        packets[i][2] = (src_addr >> 4) & 0xFF;
-        packets[i][3] = ((src_addr & 0xF) << 4) | ((dest_addr >> 28) & 0xF);
-        packets[i][4] = (dest_addr >> 20) & 0xFF;
-        packets[i][5] = (dest_addr >> 12) & 0xFF;
-        packets[i][6] = (dest_addr >> 4) & 0xFF;
-        packets[i][7] = ((dest_addr & 0xF) << 4) | (src_port << 2) | (dest_port >> 2);
-        packets[i][8] = (fragment_offset >> 8) & 0xFF;
-        packets[i][9] = ((fragment_offset & 0xFC) << 2) | ((packet_length >> 12) & 0x3);
-        packets[i][10] = (packet_length >> 4) & 0xFF;
-        packets[i][11] = ((packet_length & 0xF) << 4) | (maximum_hop_count >> 1);
-        packets[i][12] = ((maximum_hop_count & 0x1) << 7); // Checksum will be filled later
+        // Header construction
+        packets[num_packets_created][0] = src_addr >> 24;
+        packets[num_packets_created][1] = src_addr >> 16;
+        packets[num_packets_created][2] = src_addr >> 8;
+        packets[num_packets_created][3] = src_addr & 0xF0 | (dest_addr >> 28 & 0x0F);
+        packets[num_packets_created][4] = dest_addr >> 20;
+        packets[num_packets_created][5] = dest_addr >> 12;
+        packets[num_packets_created][6] = dest_addr >> 4;
+        packets[num_packets_created][7] = (dest_addr & 0xF) << 4 | src_port << 2 | dest_port >> 2;
+        packets[num_packets_created][8] = fragment_offset >> 8;
+        packets[num_packets_created][9] = (fragment_offset & 0xFF) << 2 | (packet_length >> 12 & 0x03);
+        packets[num_packets_created][10] = packet_length >> 4;
+        packets[num_packets_created][11] = (packet_length & 0xF) << 4 | maximum_hop_count >> 1;
+        packets[num_packets_created][12] = maximum_hop_count & 0x1 << 7; // Checksum will be filled later
         // bytes 13, 14 will be for checksum
-        packets[i][15] = (compression_scheme << 6) | traffic_class;
+        packets[num_packets_created][15] = compression_scheme << 6 | traffic_class;
 
-        // Fill in the payload
-        for (unsigned int j = 0; j < payload_length; j += 4) {
-            packets[i][HEADER_SIZE + j] = (array[array_index] >> 24) & 0xFF;
-            packets[i][HEADER_SIZE + j + 1] = (array[array_index] >> 16) & 0xFF;
-            packets[i][HEADER_SIZE + j + 2] = (array[array_index] >> 8) & 0xFF;
-            packets[i][HEADER_SIZE + j + 3] = array[array_index] & 0xFF;
-            array_index++;
+        // Payload construction
+        for (unsigned int i = 0; i < payload_length; i += 4) {
+            int value = array[array_index++];
+            packets[num_packets_created][HEADER_SIZE + i] = value >> 24;
+            packets[num_packets_created][HEADER_SIZE + i + 1] = value >> 16;
+            packets[num_packets_created][HEADER_SIZE + i + 2] = value >> 8;
+            packets[num_packets_created][HEADER_SIZE + i + 3] = value;
         }
 
-        // Compute and fill in the checksum
-        unsigned int checksum = compute_checksum_sf(packets[i]);
-        packets[i][12] |= (checksum >> 16) & 0x7F;
-        packets[i][13] = (checksum >> 8) & 0xFF;
-        packets[i][14] = checksum & 0xFF;
+        // Compute checksum
+        unsigned int checksum = compute_checksum_sf(packets[num_packets_created]);
+        packets[num_packets_created][12] |= (checksum >> 16) & 0x7F; // Assign the upper bits of the checksum
+        packets[num_packets_created][13] = checksum >> 8;
+        packets[num_packets_created][14] = checksum & 0xFF;
 
-        // Increment the fragment offset
-        fragment_offset += payload_length;
-
-        // Increment the number of packets created
+        fragment_offset += payload_length / sizeof(int);
         num_packets_created++;
     }
 
     return num_packets_created;
 }
+
 
 
