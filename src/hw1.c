@@ -156,57 +156,62 @@ unsigned int reconstruct_array_sf(unsigned char *packets[], unsigned int packets
     return finalRes;
 }
 
-unsigned int packetize_array_sf(int *array, unsigned int array_len, unsigned char *packets[], unsigned int packets_len,
-                          unsigned int max_payload, unsigned int src_addr, unsigned int dest_addr,
-                          unsigned int src_port, unsigned int dest_port, unsigned int maximum_hop_count,
-                          unsigned int compression_scheme, unsigned int traffic_class)
-{
-    unsigned int finalRes = 0, fragment_offset = 0, totalPayload, totalPackets;
-    for(int i = 0; i < array_len; i = i + (max_payload/sizeof(int))) 
-    {
-        if(((max_payload/sizeof(int)) + i) > array_len) totalPayload = array_len - i;
-        else totalPayload = (max_payload/sizeof(int));
-        unsigned int currPayloadTotal = totalPayload*sizeof(int);
-        totalPackets = (totalPayload*sizeof(int)) + 16;
-        if(finalRes >= packets_len) break;
-        packets[finalRes] = (unsigned char *)malloc(totalPackets);
-        if(packets[finalRes] == NULL) break;
-        packets[finalRes][0] = (src_addr >> 20) & 0xFF;
-        packets[finalRes][1] = (src_addr >> 12) & 0xFF;
-        packets[finalRes][2] = (src_addr >> 4) & 0xFF;
-        packets[finalRes][3] = ((src_addr & 0xF) << 4) | ((dest_addr >> 24) & 0xF);
-        packets[finalRes][4] = (dest_addr >> 20) & 0xFF;
-        packets[finalRes][5] = (dest_addr >> 12) & 0xFF;
-        packets[finalRes][6] = (dest_addr >> 4) & 0xFF;
-        packets[finalRes][7] = ((dest_addr & 0x0F) << 4) | (src_port & 0x0F);
-        packets[finalRes][8] = (fragment_offset >> 8) & 0xFF;
-        packets[finalRes][9] = (fragment_offset & 0xFF);
-        packets[finalRes][10] = (totalPackets >> 8) & 0xFF;
-        packets[finalRes][11] = totalPackets & 0xFF;
-        packets[finalRes][12] = ((maximum_hop_count & 0x1F) << 3);
-        packets[finalRes][13] = ((compression_scheme & 0x03) << 6) | ((traffic_class >> 2) & 0x3F);
-        packets[finalRes][14] = ((traffic_class & 0x03) << 6);
+unsigned int packetize_array_sf(int *array, unsigned int array_len,
+    unsigned char *packets[], unsigned int packets_len,
+    unsigned int max_payload, unsigned int src_addr,
+    unsigned int dest_addr, unsigned int src_port,
+    unsigned int dest_port, unsigned int maximum_hop_count,
+    unsigned int compression_scheme, unsigned int traffic_class) {
 
-        packets[finalRes][12] &= 0x80; 
-        packets[finalRes][13] = 0;
-        packets[finalRes][14] = 0;
+  // Calculate the header size and space for integers in the payload
+  int header_size = sizeof(unsigned int) * 10; // Header uses 10 unsigned ints 
+  int bytes_per_payload = max_payload - header_size;
+  int num_integers_per_payload = bytes_per_payload / sizeof(int);
 
-        for(int k = 0; k < totalPayload; ++k)
-        {
-            int currPayload = array[k+i];
-            packets[finalRes][16 + (k * 4)] = (currPayload >> 24) & 0xFF;
-            packets[finalRes][16 + (k * 4) + 1] = (currPayload >> 16) & 0xFF;
-            packets[finalRes][16 + (k * 4) + 2] = (currPayload >> 8) & 0xFF;
-            packets[finalRes][16 + (k * 4) + 3] = currPayload & 0xFF;
-        }
-        unsigned int checksum = compute_checksum_sf(packets[finalRes]);
-        packets[finalRes][12] |= (checksum >> 16) & 0x7F; 
-        packets[finalRes][13] = (checksum >> 8) & 0xFF;
-        packets[finalRes][14] = checksum & 0xFF;
-        fragment_offset += currPayloadTotal;
-        finalRes++;
+  // Calculate the number of packets needed
+  int num_packets = (array_len + num_integers_per_payload - 1) / num_integers_per_payload;
+  num_packets = num_packets > packets_len ? packets_len : num_packets;
+
+  // Iterate through and create packets
+  for (int i = 0; i < num_packets; i++) {
+    // Allocate memory for the packet
+    packets[i] = malloc(max_payload);
+    if (packets[i] == NULL) {
+      // Handle memory allocation failure
+      break; 
     }
-    return finalRes;
+
+    // Set header fields
+    unsigned int *header = (unsigned int *)packets[i];
+    header[0] = src_addr;
+    header[1] = dest_addr;
+    header[2] = src_port;
+    header[3] = dest_port;
+    header[4] = i * bytes_per_payload; // Fragment Offset
+    header[5] = header_size + num_integers_per_payload * sizeof(int); // Packet Length
+    header[6] = maximum_hop_count;
+    header[7] = compute_checksum_sf(packets[i]); // Will calculate checksum later
+    header[8] = compression_scheme;
+    header[9] = traffic_class;
+
+    // Calculate how many integers this packet can hold 
+    int num_integers_this_packet = num_integers_per_payload;
+    if (i == num_packets - 1) { // Check if this is the last packet 
+      num_integers_this_packet = array_len % num_integers_per_payload;
+    }
+
+    // Copy payload integers from the array
+    for (int j = 0; j < num_integers_this_packet; j++) {
+      unsigned int *payload_segment = (unsigned int*)(packets[i] + header_size);
+      payload_segment[j] = array[i * num_integers_per_payload + j];
+    }
+
+    // Compute and set checksum
+    header[7] = compute_checksum_sf(packets[i]);
+  }
+
+  return num_packets;
 }
+
 
 
