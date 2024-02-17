@@ -156,28 +156,21 @@ unsigned int reconstruct_array_sf(unsigned char *packets[], unsigned int packets
     return finalRes;
 }
 
-
 unsigned int packetize_array_sf(int *array, unsigned int array_len, unsigned char *packets[], unsigned int packets_len,
-                              unsigned int max_payload, unsigned int src_addr, unsigned int dest_addr,
-                              unsigned int src_port, unsigned int dest_port, unsigned int maximum_hop_count,
-                              unsigned int compression_scheme, unsigned int traffic_class) {
+                          unsigned int max_payload, unsigned int src_addr, unsigned int dest_addr,
+                          unsigned int src_port, unsigned int dest_port, unsigned int maximum_hop_count,
+                          unsigned int compression_scheme, unsigned int traffic_class)
+{
     unsigned int finalRes = 0, fragment_offset = 0, totalPayload, totalPackets;
-    for (int i = 0; i < array_len; i += (max_payload / sizeof(int))) {
-        if (((max_payload / sizeof(int)) + i) > array_len) {
-            totalPayload = array_len - i;
-        } else {
-            totalPayload = (max_payload / sizeof(int));
-        }
-        unsigned int currPayloadTotal = totalPayload * sizeof(int);
-        totalPackets = currPayloadTotal + 16;
-        if (finalRes >= packets_len) {
-            break;
-        }
+    for(int i = 0; i < array_len; i = i + (max_payload/sizeof(int))) 
+    {
+        if(((max_payload/sizeof(int)) + i) > array_len) totalPayload = array_len - i;
+        else totalPayload = (max_payload/sizeof(int));
+        unsigned int currPayloadTotal = totalPayload*sizeof(int);
+        totalPackets = (totalPayload*sizeof(int)) + 16;
+        if(finalRes >= packets_len) break;
         packets[finalRes] = (unsigned char *)malloc(totalPackets);
-        if (packets[finalRes] == NULL) {
-            break;
-        }
-
+        if(packets[finalRes] == NULL) break;
         packets[finalRes][0] = (src_addr >> 20) & 0xFF;
         packets[finalRes][1] = (src_addr >> 12) & 0xFF;
         packets[finalRes][2] = (src_addr >> 4) & 0xFF;
@@ -206,18 +199,14 @@ unsigned int packetize_array_sf(int *array, unsigned int array_len, unsigned cha
             packets[finalRes][16 + (k * 4) + 2] = (currPayload >> 8) & 0xFF;
             packets[finalRes][16 + (k * 4) + 3] = currPayload & 0xFF;
         }
-
-        // Calculate checksum directly within the loop
-        unsigned int checksum = 0;  // Initialize checksum to 0
-        // Calculate checksum over header and payload
-        for (int j = 0; j < totalPackets; j++) {
-            checksum += packets[finalRes][j];
-        }
-
-        // Set checksum field in the header
-        packets[finalRes][15] = checksum & 0xFF;  // Store lower byte of checksum
+        unsigned int checksum = compute_checksum_sf(packets[finalRes]);
+        packets[finalRes][12] |= (checksum >> 16) & 0x7F; 
+        packets[finalRes][13] = (checksum >> 8) & 0xFF;
+        packets[finalRes][14] = checksum & 0xFF;
+        fragment_offset += currPayloadTotal;
+        finalRes++;
     }
-
     return finalRes;
 }
+
 
