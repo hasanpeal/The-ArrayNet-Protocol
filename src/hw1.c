@@ -162,7 +162,7 @@ unsigned int packetize_array_sf(int *array, unsigned int array_len, unsigned cha
                           unsigned int compression_scheme, unsigned int traffic_class)
 {
     unsigned int finalRes = 0, fragment_offset = 0, totalPayload, totalPackets;
-    for(int i = 0; i < array_len; i = i + (max_payload/sizeof(int))) 
+    for(unsigned int i = 0; i < array_len; i = i + (max_payload/sizeof(int))) 
     {
         if(((max_payload/sizeof(int)) + i) > array_len) totalPayload = array_len - i;
         else totalPayload = (max_payload/sizeof(int));
@@ -191,7 +191,7 @@ unsigned int packetize_array_sf(int *array, unsigned int array_len, unsigned cha
         packets[finalRes][13] = 0;
         packets[finalRes][14] = 0;
 
-        for(int k = 0; k < totalPayload; ++k)
+        for(unsigned int k = 0; k < totalPayload; ++k)
         {
             int currPayload = array[k+i];
             packets[finalRes][16 + (k * 4)] = (currPayload >> 24) & 0xFF;
