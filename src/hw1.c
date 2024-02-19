@@ -159,55 +159,61 @@ unsigned int reconstruct_array_sf(unsigned char *packets[], unsigned int packets
 unsigned int packetize_array_sf(int *array, unsigned int array_len, unsigned char *packets[], unsigned int packets_len,
                           unsigned int max_payload, unsigned int src_addr, unsigned int dest_addr,
                           unsigned int src_port, unsigned int dest_port, unsigned int maximum_hop_count,
-                          unsigned int compression_scheme, unsigned int traffic_class)
-{
-    unsigned int finalRes = 0, fragment_offset = 0, totalPayload, totalPackets;
-    for(unsigned int i = 0; i < array_len; i = i + (max_payload/sizeof(int))) 
-    {
-        if(((max_payload/sizeof(int)) + i) > array_len) totalPayload = array_len - i;
-        else totalPayload = (max_payload/sizeof(int));
-        unsigned int currPayloadTotal = totalPayload*sizeof(int);
-        totalPackets = (totalPayload*sizeof(int)) + 16;
-        if(finalRes >= packets_len) break;
-        packets[finalRes] = (unsigned char *)malloc(totalPackets);
-        if(packets[finalRes] == NULL) break;
-        packets[finalRes][0] = (src_addr >> 20) & 0xFF;
-        packets[finalRes][1] = (src_addr >> 12) & 0xFF;
-        packets[finalRes][2] = (src_addr >> 4) & 0xFF;
-        packets[finalRes][3] = ((src_addr & 0xF) << 4) | ((dest_addr >> 24) & 0xF);
-        packets[finalRes][4] = (dest_addr >> 20) & 0xFF;
-        packets[finalRes][5] = (dest_addr >> 12) & 0xFF;
-        packets[finalRes][6] = (dest_addr >> 4) & 0xFF;
-        packets[finalRes][7] = ((dest_addr & 0x0F) << 4) | (src_port & 0x0F);
-        packets[finalRes][8] = (fragment_offset >> 8) & 0xFF;
-        packets[finalRes][9] = (fragment_offset & 0xFF);
-        packets[finalRes][10] = (totalPackets >> 8) & 0xFF;
-        packets[finalRes][11] = totalPackets & 0xFF;
-        packets[finalRes][12] = ((maximum_hop_count & 0x1F) << 3);
-        packets[finalRes][13] = ((compression_scheme & 0x03) << 6) | ((traffic_class >> 2) & 0x3F);
-        packets[finalRes][14] = ((traffic_class & 0x03) << 6);
-
-        packets[finalRes][12] &= 0x80; 
-        packets[finalRes][13] = 0;
-        packets[finalRes][14] = 0;
-
-        for(unsigned int k = 0; k < totalPayload; ++k)
-        {
-            int currPayload = array[k+i];
-            packets[finalRes][16 + (k * 4)] = (currPayload >> 24) & 0xFF;
-            packets[finalRes][16 + (k * 4) + 1] = (currPayload >> 16) & 0xFF;
-            packets[finalRes][16 + (k * 4) + 2] = (currPayload >> 8) & 0xFF;
-            packets[finalRes][16 + (k * 4) + 3] = currPayload & 0xFF;
-        }
-        unsigned int checksum = compute_checksum_sf(packets[finalRes]);
-        packets[finalRes][12] |= (checksum >> 16) & 0x7F; 
-        packets[finalRes][13] = (checksum >> 8) & 0xFF;
-        packets[finalRes][14] = checksum & 0xFF;
-        fragment_offset += currPayloadTotal;
-        finalRes++;
-    }
-    return finalRes;
+                          unsigned int compression_scheme, unsigned int traffic_class) {
+    unsigned int packets_created = 0, fragment_offset = 0;
+    const unsigned int header_size = 16; // The fixed header size
+    const unsigned int max_integers_per_packet = (max_payload - header_size) / sizeof(int); // Max integers that can fit in the payload
     
+    for(unsigned int i = 0; i < array_len; i += max_integers_per_packet) {
+        unsigned int payload_size = ((array_len - i) < max_integers_per_packet) ? (array_len - i) : max_integers_per_packet;
+        unsigned int packet_size = header_size + payload_size * sizeof(int);
+        
+        if (packets_created >= packets_len) break; // Check if there's space for more packets
+        
+        packets[packets_created] = (unsigned char *)malloc(packet_size);
+        if (packets[packets_created] == NULL) break; // Allocation check
+        
+        // Header construction
+        packets[packets_created][0] = (src_addr >> 24) & 0xFF;
+        packets[packets_created][1] = (src_addr >> 16) & 0xFF;
+        packets[packets_created][2] = (src_addr >> 8) & 0xFF;
+        packets[packets_created][3] = (src_addr & 0xFF);
+
+        packets[packets_created][4] = (dest_addr >> 24) & 0xFF;
+        packets[packets_created][5] = (dest_addr >> 16) & 0xFF;
+        packets[packets_created][6] = (dest_addr >> 8) & 0xFF;
+        packets[packets_created][7] = dest_addr & 0xFF;
+
+        // Corrected: src_port and dest_port
+        packets[packets_created][8] = ((src_port & 0x0F) << 4) | (dest_port & 0x0F);
+        
+        // Fragment offset and total packet length
+        packets[packets_created][9] = (fragment_offset >> 8) & 0xFF;
+        packets[packets_created][10] = fragment_offset & 0xFF;
+        packets[packets_created][11] = (packet_size >> 8) & 0xFF;
+        packets[packets_created][12] = packet_size & 0xFF;
+        
+        // Maximum Hop Count, Compression Scheme, and Traffic Class
+        packets[packets_created][13] = (maximum_hop_count & 0x1F) << 3 | (compression_scheme & 0x03) << 1 | (traffic_class >> 5) & 0x01;
+        packets[packets_created][14] = (traffic_class & 0x1F) << 3; // Adjusted for clarity
+
+        // Payload
+        for(unsigned int j = 0; j < payload_size; ++j) {
+            int value = array[i + j];
+            memcpy(&packets[packets_created][header_size + j * 4], &value, sizeof(int));
+        }
+        
+        // Checksum calculation - ensure this happens after the entire packet is filled, except for the checksum itself
+        unsigned int checksum = compute_checksum_sf(packets[packets_created]);
+        packets[packets_created][15] = (checksum >> 16) & 0x7F; // High bits of checksum
+        packets[packets_created][16] = (checksum >> 8) & 0xFF;  // Middle bits of checksum
+        packets[packets_created][17] = checksum & 0xFF;         // Low bits of checksum
+
+        fragment_offset += payload_size * sizeof(int); // Update fragment offset by the number of bytes in the payload
+        packets_created++; // Increment the packet count
+    }
+    return packets_created;
 }
+
 
 
