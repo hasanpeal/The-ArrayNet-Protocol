@@ -181,7 +181,8 @@ unsigned int packetize_array_sf(int *array, unsigned int array_len,
         if(packets[finalRes] == NULL) 
             break;
 
-        
+        for(unsigned int j = 0; j < totalPacketSize; j++) packets[finalRes][j] = 0;
+
         packets[finalRes][0] = (src_addr >> 20) & 0xFF;
         packets[finalRes][1] = (src_addr >> 12) & 0xFF;
         packets[finalRes][2] = (src_addr >> 4) & 0xFF;
