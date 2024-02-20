@@ -124,37 +124,35 @@ unsigned int compute_checksum_sf(unsigned char packet[])
     return result;
 }
 
-unsigned int reconstruct_array_sf(unsigned char *packets[], unsigned int packets_len, int *array, unsigned int array_len) {
+unsigned int reconstruct_array_sf(unsigned char *packets[], 
+    unsigned int packets_len, int *array, unsigned int array_len) {
+    
     unsigned int finalRes = 0;
-    for(int i = 0; i < packets_len; i++)
-    {
+    for(unsigned int i = 0; i < packets_len; i++) {
         unsigned char *currPacket = packets[i];
-        unsigned int checksum1 = compute_checksum_sf(currPacket);
-        unsigned int checksum2 = 0;
-        checksum2 |= (currPacket[12] & 0x7F) << 16;
-        checksum2 |= currPacket[13] << 8;
-        checksum2 |= currPacket[14];
-        if(checksum1 != checksum2) continue;
-        unsigned int fragment_offset = 0;
-        fragment_offset |= (currPacket[8] & 0xFF) << 6;
-        fragment_offset |= (currPacket[9] & 0xFC) >> 2;
-        unsigned int targetIndex = fragment_offset/4;
-        if(targetIndex >= array_len) continue;
-        unsigned int packet_length = 0;
-        packet_length |= (currPacket[9] & 0x03) << 12;
-        packet_length |= currPacket[10] << 4;
-        packet_length |= (currPacket[11] & 0xF0) >> 4;
-        unsigned int totalPayload = (packet_length-16)/4;
-        for(int k = 0; (targetIndex + k) < array_len && k < totalPayload; k++)
-        {
-            int plIndex = (k*4) + 16;
-            int actualPl = (currPacket[plIndex] << 24) | (currPacket[plIndex+1] << 16) | (currPacket[plIndex+2] << 8) | (currPacket[plIndex+3]);
+        unsigned int checksum1 = compute_checksum_sf(currPacket); 
+        unsigned int checksum2 = ((currPacket[12] & 0x7F) << 16) | (currPacket[13] << 8) | currPacket[14];
+        
+        if(checksum1 != checksum2) continue; 
+        
+        unsigned int fragment_offset = ((currPacket[8] & 0xFF) << 6) | ((currPacket[9] & 0xFC) >> 2);
+        unsigned int targetIndex = fragment_offset / 4; 
+        
+        if(targetIndex >= array_len) continue; 
+        
+        unsigned int packet_length = ((currPacket[9] & 0x03) << 12) | (currPacket[10] << 4) | ((currPacket[11] & 0xF0) >> 4);
+        unsigned int payloadLength = (packet_length - 16) / 4; 
+        
+        for(unsigned int k = 0; (k < payloadLength) && ((targetIndex + k) < array_len); k++) {
+            unsigned int plIndex = 16 + (k * 4); 
+            int actualPl = (currPacket[plIndex] << 24) | (currPacket[plIndex + 1] << 16) | (currPacket[plIndex + 2] << 8) | (currPacket[plIndex + 3]);
             array[targetIndex + k] = actualPl;
             finalRes++;
         }
     }
     return finalRes;
 }
+
 
 unsigned int packetize_array_sf(int *array, unsigned int array_len, 
                         unsigned char *packets[], unsigned int packets_len,
